@@ -13,7 +13,7 @@ site.main()
 
 enabled = False
 check_frequency = 1000  # ms
-debug_mode = True
+debug_mode = False
 
 show_title = True
 show_artist = True
