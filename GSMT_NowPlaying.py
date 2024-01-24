@@ -9,7 +9,7 @@ import asyncio
 import os
 
 enabled = False
-check_frequency = 5000  # ms
+check_frequency = 5  # ms
 debug_mode = False
 
 last_title = ""
@@ -18,7 +18,7 @@ artist_layer = ""
 cover_layer = ""
 
 cover = ""
-show_cover = True
+show_cover = False
 current_image = None
 image_folder = os.path.dirname(__file__)
 
