@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # ==============================================================================
-import site
 
 import obspython as obs
 
@@ -9,26 +8,20 @@ import winsdk.windows.storage.streams as streams
 import asyncio
 import os
 
-site.main()
-
 enabled = False
-check_frequency = 1000  # ms
+check_frequency = 5000  # ms
 debug_mode = False
-
-show_title = True
-show_artist = True
-show_cover = True
 
 last_title = ""
 title_layer = ""
 artist_layer = ""
 cover_layer = ""
 
+show_cover = False
 current_image = None
 image_folder = os.path.dirname(__file__)
 
 image_directory = ""
-retry_load_cover = False
 
 
 def script_defaults(settings):
@@ -38,9 +31,7 @@ def script_defaults(settings):
     obs.obs_data_set_default_bool(settings, "enabled", enabled)
     obs.obs_data_set_default_bool(settings, "debug_mode", debug_mode)
     obs.obs_data_set_default_int(settings, "check_frequency", check_frequency)
-    # obs.obs_data_set_default_bool(settings, "show_title", show_title)
-    # obs.obs_data_set_default_bool(settings, "show_artist", show_artist)
-    # obs.obs_data_set_default_bool(settings, "show_cover", show_cover)
+    obs.obs_data_set_default_bool(settings, "show_cover", show_cover)
     obs.obs_data_set_default_string(settings, "title_layer", title_layer)
     obs.obs_data_set_default_string(settings, "artist_layer", artist_layer)
     obs.obs_data_set_default_string(settings, "cover_layer", cover_layer)
@@ -51,10 +42,11 @@ def script_description():
         print("Calling description")
 
     return (
-        "<b>Music Now Playing</b>"
+        "<b>Now Playing</b>"
         + "<hr>"
-        + "Display current playing song from Windows Global System Media Transport"
+        + "Подгружает информацию о воcпроизводимой музыке в выбранные источники ниже."
         + "<br/>"
+        + "Информация подтягивается напрямую из медиаплеера Windows, в который попадает практически любой медиаконтент который в данный момент воспроизводится в системе."
         + "<hr>"
     )
 
@@ -62,6 +54,7 @@ def script_description():
 def script_load(_):
     if debug_mode:
         print("Loaded script.")
+    script_update(_)
 
 
 def script_properties():
@@ -70,23 +63,29 @@ def script_properties():
 
     props = obs.obs_properties_create()
 
+    obs.obs_properties_add_bool(props, "debug_mode", "Больше деталей в журнале")
+
+    create_obs_field_selector(props, "title_layer", "Источник вывода названия", "text")
+    create_obs_field_selector(
+        props, "artist_layer", "Источник вывода исполнителя", "text"
+    )
+
+    obs.obs_properties_add_bool(props, "show_cover", "Обновлять обложку")
+    create_obs_field_selector(props, "cover_layer", "Источник вывода обложки", "image")
     obs.obs_properties_add_path(
-        props, "image_directory", "Directory for cover", obs.OBS_PATH_DIRECTORY, "", ""
+        props,
+        "image_directory",
+        "Папка, где хранится файл обложки",
+        obs.OBS_PATH_DIRECTORY,
+        "",
+        "",
     )
 
-    create_obs_field_selector(props, "title_layer", "Layer with song title", "text")
-    create_obs_field_selector(props, "artist_layer", "Layer with song artist", "text")
-    create_obs_field_selector(props, "cover_layer", "Layer with song cover", "image")
-
-    # obs.obs_properties_add_bool(props, "show_title", "Update song title")
-    # obs.obs_properties_add_bool(props, "show_artist", "Update song artist")
-    # obs.obs_properties_add_bool(props, "show_cover", "Update song cover")
-
-    obs.obs_properties_add_int(
-        props, "check_frequency", "Check frequency (ms)", 1000, 10000, 100
+    obs.obs_properties_add_int_slider(
+        props, "check_frequency", "Частота обновления (сек)", 1, 15, 1
     )
-    obs.obs_properties_add_bool(props, "debug_mode", "Debug Mode")
-    obs.obs_properties_add_bool(props, "enabled", "Enabled")
+
+    obs.obs_properties_add_bool(props, "enabled", "Скрипт включен")
 
     return props
 
@@ -137,11 +136,13 @@ def script_update(settings):
     global check_frequency
     # global show_title
     # global show_artist
-    # global show_cover
+    global show_cover
     global title_layer
     global artist_layer
     global cover_layer
     global image_directory
+
+    check_frequency = check_frequency * 1000
 
     if debug_mode:
         print("Updated properties.")
@@ -167,9 +168,7 @@ def script_update(settings):
         obs.timer_remove(get_song_info)
 
     debug_mode = obs.obs_data_get_bool(settings, "debug_mode")
-    # show_artist = obs.obs_data_get_bool(settings, "show_artist")
-    # show_cover = obs.obs_data_get_bool(settings, "show_cover")
-    # show_title = obs.obs_data_get_bool(settings, "show_title")
+    show_cover = obs.obs_data_get_bool(settings, "show_cover")
     title_layer = obs.obs_data_get_string(settings, "title_layer")
     artist_layer = obs.obs_data_get_string(settings, "artist_layer")
     cover_layer = obs.obs_data_get_string(settings, "cover_layer")
@@ -214,8 +213,8 @@ def get_song_info():
 
 
 async def get_current_playing_song():
+    global show_cover
     global last_title
-    global retry_load_cover
 
     if debug_mode:
         print("Check audio sessions ")
@@ -234,34 +233,37 @@ async def get_current_playing_song():
         title = media_info.title
         artist = media_info.artist
 
-        if retry_load_cover == False or (last_title != title + artist):
-            # Attempt to get the thumbnail
-            thumbnail_ref = media_info.thumbnail
-            if thumbnail_ref:
-                stream_with_content = await thumbnail_ref.open_read_async()
-                size = stream_with_content.size
-                if size:
-                    reader = streams.DataReader(stream_with_content)
-                    await reader.load_async(size)
-                    data = reader.read_buffer(size)
-                    # Save the image data to a file
-                    file_name = f"thumb.png".replace("/", "_").replace("\\", "_")
-                    with open(image_directory + "/" + file_name, "wb") as file:
-                        file.write(data)
-                    print(f"Album cover saved as {file_name}")
-                    retry_load_cover = True
-                    cover = file_name
+        if last_title != title + artist:
+            if show_cover is True:
+                # Attempt to get the thumbnail
+                thumbnail_ref = media_info.thumbnail
+                if thumbnail_ref:
+                    stream_with_content = await thumbnail_ref.open_read_async()
+                    size = stream_with_content.size
+                    if size:
+                        reader = streams.DataReader(stream_with_content)
+                        await reader.load_async(size)
+                        data = reader.read_buffer(size)
+                        # Save the image data to a file
+                        file_name = f"thumb.png".replace("/", "_").replace("\\", "_")
+                        with open(image_directory + "/" + file_name, "wb") as file:
+                            file.write(data)
+
+                        if debug_mode:
+                            print(f"Album cover saved as {file_name}")
+                        cover = file_name
+                    else:
+                        if debug_mode:
+                            print("No album cover available.")
                 else:
-                    print("No album cover available.")
-                    retry_load_cover = False
-            else:
-                print("No album cover available.")
+                    if debug_mode:
+                        print("No album cover available.")
+
     else:
-        print("No song is currently playing.")
+        if debug_mode:
+            print("No song is currently playing.")
 
     try:
         update_song(artist, title, cover)
     except:
         update_song()
-    finally:
-        retry_load_cover == False
