@@ -17,7 +17,8 @@ title_layer = ""
 artist_layer = ""
 cover_layer = ""
 
-show_cover = False
+cover = ""
+show_cover = True
 current_image = None
 image_folder = os.path.dirname(__file__)
 
@@ -134,8 +135,6 @@ def script_update(settings):
     global enabled
     global debug_mode
     global check_frequency
-    # global show_title
-    # global show_artist
     global show_cover
     global title_layer
     global artist_layer
@@ -158,6 +157,7 @@ def script_update(settings):
                 print("Enabled song timer.")
 
         enabled = True
+        check_frequency = obs.obs_data_get_int(settings, "check_frequency") * 1000
         obs.timer_add(get_song_info, check_frequency)
     else:
         if enabled:
@@ -165,6 +165,7 @@ def script_update(settings):
                 print("Disabled song timer.")
 
         enabled = False
+        check_frequency = obs.obs_data_get_int(settings, "check_frequency") * 1000
         obs.timer_remove(get_song_info)
 
     debug_mode = obs.obs_data_get_bool(settings, "debug_mode")
@@ -173,7 +174,6 @@ def script_update(settings):
     artist_layer = obs.obs_data_get_string(settings, "artist_layer")
     cover_layer = obs.obs_data_get_string(settings, "cover_layer")
     image_directory = obs.obs_data_get_string(settings, "image_directory")
-    check_frequency = obs.obs_data_get_int(settings, "check_frequency")
 
 
 def update_song(artist="", title="", cover=""):
@@ -215,6 +215,7 @@ def get_song_info():
 async def get_current_playing_song():
     global show_cover
     global last_title
+    global cover
 
     if debug_mode:
         print("Check audio sessions ")
@@ -266,4 +267,4 @@ async def get_current_playing_song():
     try:
         update_song(artist, title, cover)
     except:
-        update_song()
+        update_song(artist, title)
