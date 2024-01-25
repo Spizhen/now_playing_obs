@@ -216,6 +216,7 @@ async def get_current_playing_song():
     global show_cover
     global last_title
     global cover
+    global image_directory
 
     if debug_mode:
         print("Check audio sessions ")
@@ -235,7 +236,7 @@ async def get_current_playing_song():
         artist = media_info.artist
 
         if last_title != title + artist:
-            if show_cover is True:
+            if show_cover is True and image_directory != "":
                 # Attempt to get the thumbnail
                 thumbnail_ref = media_info.thumbnail
                 if thumbnail_ref:
