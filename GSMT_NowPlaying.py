@@ -58,6 +58,22 @@ def script_load(_):
     script_update(_)
 
 
+def on_property_modified(props, property, settings):
+    # hint: https://github.com/Mr-Mmhhmm-OBS/OBS-Event-Manager/tree/master
+
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "cover_layer"), show_cover is True
+    )
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "image_directory_hint"), show_cover is True
+    )
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "image_directory"), show_cover is True
+    )
+
+    return True
+
+
 def script_properties():
     if debug_mode:
         print("Loaded properties.")
@@ -71,9 +87,28 @@ def script_properties():
         props, "artist_layer", "Источник вывода исполнителя", "text"
     )
 
-    obs.obs_properties_add_bool(props, "show_cover", "Обновлять обложку")
-    create_obs_field_selector(props, "cover_layer", "Источник вывода обложки", "image")
-    obs.obs_properties_add_path(
+    p_show_cover = obs.obs_properties_add_bool(
+        props, "show_cover", "Обновлять обложку "
+    )
+    obs.obs_property_set_modified_callback(p_show_cover, on_property_modified)
+
+    warning_text = "Обязательное выберите папку хранения файла обложки!"
+
+    obs.obs_property_set_long_description(
+        p_show_cover,
+        warning_text,
+    )
+
+    p_image_directory_hint = obs.obs_properties_add_text(
+        props,
+        "image_directory_hint",
+        warning_text,
+        obs.OBS_TEXT_INFO,
+    )
+
+    obs.obs_property_set_modified_callback(p_image_directory_hint, on_property_modified)
+
+    p_image_directory = obs.obs_properties_add_path(
         props,
         "image_directory",
         "Папка, где хранится файл обложки",
@@ -81,12 +116,25 @@ def script_properties():
         "",
         "",
     )
+    obs.obs_property_set_modified_callback(p_image_directory, on_property_modified)
+
+    create_obs_field_selector(props, "cover_layer", "Источник вывода обложки", "image")
 
     obs.obs_properties_add_int_slider(
         props, "check_frequency", "Частота обновления (сек)", 1, 15, 1
     )
 
     obs.obs_properties_add_bool(props, "enabled", "Скрипт включен")
+
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "cover_layer"), show_cover is True
+    )
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "image_directory"), show_cover is True
+    )
+    obs.obs_property_set_visible(
+        obs.obs_properties_get(props, "image_directory_hint"), show_cover is True
+    )
 
     return props
 
@@ -174,6 +222,9 @@ def script_update(settings):
     artist_layer = obs.obs_data_get_string(settings, "artist_layer")
     cover_layer = obs.obs_data_get_string(settings, "cover_layer")
     image_directory = obs.obs_data_get_string(settings, "image_directory")
+
+    if debug_mode:
+        print("Selected image directory - " + image_directory)
 
 
 def update_song(artist="", title="", cover=""):
