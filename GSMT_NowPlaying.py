@@ -239,28 +239,38 @@ def update_song(artist="", title="", cover=""):
 
         settings = obs.obs_data_create()
 
-        obs.obs_data_set_string(settings, "text", title)
-        title = obs.obs_get_source_by_name(title_layer)
-        obs.obs_source_update(title, settings)
+        # Обновляем только если источники существуют
+        if title_layer:
+            obs.obs_data_set_string(settings, "text", title)
+            title_source = obs.obs_get_source_by_name(title_layer)
+            if title_source:
+                obs.obs_source_update(title_source, settings)
+                obs.obs_source_release(title_source)
 
-        obs.obs_data_set_string(settings, "text", artist)
-        artist = obs.obs_get_source_by_name(artist_layer)
-        obs.obs_source_update(artist, settings)
+        if artist_layer:
+            obs.obs_data_set_string(settings, "text", artist)
+            artist_source = obs.obs_get_source_by_name(artist_layer)
+            if artist_source:
+                obs.obs_source_update(artist_source, settings)
+                obs.obs_source_release(artist_source)
 
-        obs.obs_data_set_string(settings, "file", image_directory + "/" + cover)
-        cover = obs.obs_get_source_by_name(cover_layer)
-        obs.obs_source_update(cover, settings)
+        if cover_layer and cover and image_directory:
+            obs.obs_data_set_string(settings, "file", image_directory + "/" + cover)
+            cover_source = obs.obs_get_source_by_name(cover_layer)
+            if cover_source:
+                obs.obs_source_update(cover_source, settings)
+                obs.obs_source_release(cover_source)
 
         obs.obs_data_release(settings)
 
-        obs.obs_source_release(title)
-        obs.obs_source_release(artist)
-        obs.obs_source_release(cover)
-
 
 def get_song_info():
-    load_data = get_current_playing_song()
-    asyncio.run(load_data)
+    try:
+        load_data = get_current_playing_song()
+        asyncio.run(load_data)
+    except Exception as e:
+        if debug_mode:
+            print(f"Error in get_song_info: {e}")
 
 
 async def get_current_playing_song():
@@ -269,54 +279,73 @@ async def get_current_playing_song():
     global cover
     global image_directory
 
-    if debug_mode:
-        print("Check audio sessions ")
-
-    # Get the current session manager
-    sessions = (
-        await media_control.GlobalSystemMediaTransportControlsSessionManager.request_async()
-    )
-
-    # Get the current session
-    current_session = sessions.get_current_session()
-    if current_session:
-        # Get the media information
-        media_info = await current_session.try_get_media_properties_async()
-
-        title = media_info.title
-        artist = media_info.artist
-
-        if last_title != title + artist:
-            if show_cover is True and image_directory != "":
-                # Attempt to get the thumbnail
-                thumbnail_ref = media_info.thumbnail
-                if thumbnail_ref:
-                    stream_with_content = await thumbnail_ref.open_read_async()
-                    size = stream_with_content.size
-                    if size:
-                        reader = streams.DataReader(stream_with_content)
-                        await reader.load_async(size)
-                        data = reader.read_buffer(size)
-                        # Save the image data to a file
-                        file_name = f"thumb.png".replace("/", "_").replace("\\", "_")
-                        with open(image_directory + "/" + file_name, "wb") as file:
-                            file.write(data)
-
-                        if debug_mode:
-                            print(f"Album cover saved as {file_name}")
-                        cover = file_name
-                    else:
-                        if debug_mode:
-                            print("No album cover available.")
-                else:
-                    if debug_mode:
-                        print("No album cover available.")
-
-    else:
-        if debug_mode:
-            print("No song is currently playing.")
+    # Инициализируем переменные по умолчанию
+    artist = ""
+    title = ""
+    cover_file = ""
 
     try:
-        update_song(artist, title, cover)
-    except:
-        update_song(artist, title)
+        if debug_mode:
+            print("Check audio sessions ")
+
+        # Get the current session manager
+        sessions = (
+            await media_control.GlobalSystemMediaTransportControlsSessionManager.request_async()
+        )
+
+        # Get the current session
+        current_session = sessions.get_current_session()
+        if current_session:
+            # Get the media information
+            media_info = await current_session.try_get_media_properties_async()
+
+            if media_info:
+                title = media_info.title if media_info.title else ""
+                artist = media_info.artist if media_info.artist else ""
+
+                if last_title != title + artist:
+                    if show_cover is True and image_directory != "":
+                        try:
+                            # Attempt to get the thumbnail
+                            thumbnail_ref = media_info.thumbnail
+                            if thumbnail_ref:
+                                stream_with_content = await thumbnail_ref.open_read_async()
+                                size = stream_with_content.size
+                                if size:
+                                    reader = streams.DataReader(stream_with_content)
+                                    await reader.load_async(size)
+                                    data = reader.read_buffer(size)
+                                    # Save the image data to a file
+                                    file_name = f"thumb.png".replace("/", "_").replace("\\", "_")
+                                    with open(image_directory + "/" + file_name, "wb") as file:
+                                        file.write(data)
+
+                                    if debug_mode:
+                                        print(f"Album cover saved as {file_name}")
+                                    cover_file = file_name
+                                else:
+                                    if debug_mode:
+                                        print("No album cover available.")
+                            else:
+                                if debug_mode:
+                                    print("No album cover available.")
+                        except Exception as e:
+                            if debug_mode:
+                                print(f"Error saving cover: {e}")
+            else:
+                if debug_mode:
+                    print("No media info available.")
+        else:
+            if debug_mode:
+                print("No song is currently playing.")
+
+    except Exception as e:
+        if debug_mode:
+            print(f"Error getting current playing song: {e}")
+
+    # Обновляем информацию о песне
+    try:
+        update_song(artist, title, cover_file)
+    except Exception as e:
+        if debug_mode:
+            print(f"Error updating song: {e}")
